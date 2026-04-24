@@ -1,4 +1,5 @@
 import argparse
+import json
 from src.bot import ejecutar_bot
 
 def main():
@@ -28,7 +29,12 @@ def main():
     visible = not args.oculto
     slow_mo = 0 if args.rapido else 500
 
-    ejecutar_bot(booking=args.booking, visible=visible, slow_mo=slow_mo)
+    resultado = ejecutar_bot(booking=args.booking, visible=visible, slow_mo=slow_mo)
+    
+    # Imprimir un JSON estructurado al final para Power Automate
+    print("\n--- INICIO JSON ---")
+    print(json.dumps(resultado, indent=4))
+    print("--- FIN JSON ---")
 
 
 if __name__ == "__main__":

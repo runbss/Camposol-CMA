@@ -131,7 +131,7 @@ def _obtener_input_busqueda(page: Page):
 def _descargar_pdf(page: Page, booking: str) -> bool:
     """
     Busca el botón de descarga, abre el popup con el PDF y lo guarda en disco.
-    Retorna True si tuvo éxito, False si no.
+    Retorna la ruta del archivo si tuvo éxito, None si no.
     """
     selectores_descarga = [
         'table img[alt*="download" i]',
@@ -170,10 +170,10 @@ def _descargar_pdf(page: Page, booking: str) -> bool:
 
     except Exception as e:
         print(f"  [descarga] Error al obtener el popup: {e}")
-        return False
+        return None
 
 
-def _guardar_pdf_desde_popup(page: Page, popup, booking: str) -> bool:
+def _guardar_pdf_desde_popup(page: Page, popup, booking: str):
     """
     Usa fetch() desde la página principal (con sesión activa) para descargar
     los bytes del PDF que está abierto en el popup y los guarda en disco.
@@ -205,19 +205,19 @@ def _guardar_pdf_desde_popup(page: Page, popup, booking: str) -> bool:
 
         print(f"  [descarga] ✅ Archivo guardado en: {download_path}")
         popup.close()
-        return True
+        return str(download_path)
 
     except Exception as e:
         print(f"  [descarga] ❌ No se pudo capturar el PDF mediante JS: {e}")
         print("  [descarga] Dejando la pestaña abierta para inspección manual.")
-        return False
+        return None
 
 
 # ---------------------------------------------------------------------------
 # Verificación de resultados
 # ---------------------------------------------------------------------------
 
-def _verificar_y_descargar(page: Page, booking: str) -> None:
+def _verificar_y_descargar(page: Page, booking: str) -> dict:
     """Lee la tabla de resultados y descarga el PDF si el estado es 'Disponible'."""
     print("  [resultado] Verificando estado del documento en la tabla...")
 
@@ -225,8 +225,7 @@ def _verificar_y_descargar(page: Page, booking: str) -> None:
         page.wait_for_selector('table, div.table, .rt-table', timeout=20000)
     except Exception:
         print("  [resultado] ❌ No se cargó ninguna tabla de resultados.")
-        print("RESULTADO: NO SE ENCONTRO ADJUNTO")
-        return
+        return {"status": "ERROR", "message": "No se encontró la tabla de resultados"}
 
     elementos = page.query_selector_all('td, span, div')
     disponible = any(
@@ -236,18 +235,21 @@ def _verificar_y_descargar(page: Page, booking: str) -> None:
 
     if disponible:
         print("  [resultado] Estado 'Disponible' detectado. Preparando descarga...")
-        exito = _descargar_pdf(page, booking)
-        print("RESULTADO: OK (Status 200)" if exito else "RESULTADO: NO SE PUDO DESCARGAR")
+        path = _descargar_pdf(page, booking)
+        if path:
+            return {"status": "OK", "message": "Descarga exitosa", "file_path": path}
+        else:
+            return {"status": "ERROR", "message": "Fallo al intentar descargar el PDF"}
     else:
         print("  [resultado] Documento no disponible o en estado 'A revisar'.")
-        print("RESULTADO: NO SE ENCONTRO ADJUNTO (Status 404/503)")
+        return {"status": "ERROR", "message": "Documento no disponible o no encontrado"}
 
 
 # ---------------------------------------------------------------------------
 # Función principal del bot
 # ---------------------------------------------------------------------------
 
-def ejecutar_bot(booking: str, visible: bool = True, slow_mo: int = SLOW_MO) -> None:
+def ejecutar_bot(booking: str, visible: bool = True, slow_mo: int = SLOW_MO) -> dict:
     """
     Punto de entrada del bot. Orquesta todo el flujo:
     navegación → login → búsqueda → descarga.
@@ -307,12 +309,17 @@ def ejecutar_bot(booking: str, visible: bool = True, slow_mo: int = SLOW_MO) -> 
 
             # 6. Verificar resultado y descargar
             print("[5/5] Verificando resultados...")
-            _verificar_y_descargar(page, booking)
+            resultado = _verificar_y_descargar(page, booking)
 
             page.wait_for_timeout(5000)
+            
+            resultado["booking"] = booking
+            return resultado
 
         except Exception as e:
-            print(f"\n  [error crítico] {e}")
+            error_msg = str(e)
+            print(f"\n  [error crítico] {error_msg}")
+            return {"status": "ERROR", "booking": booking, "message": error_msg}
 
         finally:
             print("\nCerrando navegador...")
